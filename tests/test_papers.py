@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -185,13 +186,28 @@ class NoSiteLeak(unittest.TestCase):
         self.assertNotIn("abs_url", rows[0])
         self.assertNotIn("SECRET", json.dumps(rows))
 
-    def test_package_sources_mention_no_mirror_hosts(self):
+    def test_package_sources_carry_no_real_urls(self):
+        """公开仓守门条。
+
+        注意别写成"枚举已知镜像域名当禁词表"——那张表本身就把管道对接了哪些镜像
+        说出去了。改成更严也更干净的断言：整个包不许出现任何真实 URL，
+        只允许保留段里 example.invalid。
+        """
         root = Path(__file__).resolve().parent.parent / "papers"
-        banned = ("ccki.top", "shutong", "wenxian.shop", "sjlib", "papermao", "cnki.net")
-        for f in root.glob("*.py"):
-            text = f.read_text(encoding="utf-8")
-            for b in banned:
-                self.assertNotIn(b, text, f"{f.name} 出现了 {b}")
+        offenders = []
+        for f in sorted(root.glob("*.py")):
+            for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                for m in re.finditer(r"https?://([A-Za-z0-9._-]+)", line):
+                    if m.group(1) != "example.invalid":
+                        offenders.append(f"{f.name}:{i} {m.group(1)}")
+        self.assertEqual(offenders, [], "papers/ 里出现了真实 URL：" + "; ".join(offenders))
+
+    def test_package_sources_have_no_query_tokens(self):
+        """`?v=` 这类易失取数令牌也不该进公开仓。"""
+        root = Path(__file__).resolve().parent.parent / "papers"
+        hits = [f.name for f in root.glob("*.py")
+                if re.search(r"[?&][a-z-]*token=|[?&]v=[A-Za-z0-9]", f.read_text(encoding="utf-8"))]
+        self.assertEqual(hits, [])
 
 
 
